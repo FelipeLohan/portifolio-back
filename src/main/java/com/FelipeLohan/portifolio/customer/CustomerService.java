@@ -4,6 +4,7 @@ import com.FelipeLohan.portifolio.customer.dtos.RequestCustomerDTO;
 import com.FelipeLohan.portifolio.customer.dtos.ResponseCustomerDTO;
 import com.FelipeLohan.portifolio.customer.interfaces.CustomerServiceI;
 import com.FelipeLohan.portifolio.customer.mapper.CustomerMapper;
+import com.FelipeLohan.portifolio.email.interfaces.EmailServiceI;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,17 +16,26 @@ public class CustomerService implements CustomerServiceI {
 
     private final CustomerRepository customerRepository;
     private final CustomerMapper customerMapper;
+    private final EmailServiceI emailService;
 
-    public CustomerService(CustomerRepository customerRepository, CustomerMapper customerMapper) {
+    public CustomerService(CustomerRepository customerRepository, CustomerMapper customerMapper, EmailServiceI emailService) {
         this.customerRepository = customerRepository;
         this.customerMapper = customerMapper;
+        this.emailService = emailService;
     }
 
     @Transactional
     public ResponseCustomerDTO create(RequestCustomerDTO dto) {
-        Customer customer = customerMapper.toEntity(dto);
-        Customer saved = customerRepository.save(customer);
-        return customerMapper.toResponseDTO(saved);
+        return customerRepository.findByEmail(dto.email())
+                .map(existing -> {
+                    emailService.sendDuplicateEmail(existing.getEmail(), existing.getName());
+                    return customerMapper.toResponseDTO(existing);
+                })
+                .orElseGet(() -> {
+                    Customer saved = customerRepository.save(customerMapper.toEntity(dto));
+                    emailService.sendWelcomeEmail(saved.getEmail(), saved.getName(), saved.getMessage());
+                    return customerMapper.toResponseDTO(saved);
+                });
     }
 
     @Transactional(readOnly = true)
